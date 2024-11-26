@@ -34,14 +34,14 @@ main: 								#INICIALIZACION DEL VECTOR QUE CONTIENE LAS OPCIONES PARA MANEJAR 
 		sw $t1, 8($t0)
 		la $t1, listcategories
 		sw $t1, 12($t0)
-		#la $t1, delcategory
-		#sw $t1, 16($t0)
-		#la $t1, newobject
-		#sw $t1, 20($t0)
-		#la $t1, listobjects
-		#sw $t1, 24($t0)
-		#la $t1, delobject
-		#sw $t1, 28($t0)
+		la $t1, delcategory
+		sw $t1, 16($t0)
+		la $t1, newobject
+		sw $t1, 20($t0)
+		la $t1, listobjects
+		sw $t1, 24($t0)
+		la $t1, delobject
+		sw $t1, 28($t0)
 		
 		j menu_loop
 		
@@ -174,26 +174,127 @@ error_nocategoriestolist:
 
 #FUNCION PARA ELIMINAR UNA CATEGORIA
 delcategory:
-		lw $t0, cclist
+		lw $t0, wclist
 		beqz $t0, error_nocatnodel			#Chequea si no hay categorias
+		addi $sp, $sp, -4
+		sw $ra, 4($sp)
+		lw $t1, 4($t0)
+		beqz $t1, delcat 				#Chequea si la categoría tiene objetos anexados
 		
+delobjectsloop:
+		lw $a0, ($t1)					
+		beqz $a0, delcat				#Break del loop borrador de objetos anexados para proceder a borrar la categoría
+		move $a1, $t1					
+		jal delnode
+		j delobjectsloop			
+		
+delcat:
+		li $t1, 0
+		sw $t1, 4($t0) 					#Limpia el puntero a la lista de objetos anexados
+		move $a0, $t0					
+		la $a1, cclist  				
+		jal delnode					#Elimina la categoría
+		lw $t0, cclist  				
+		beqz $t0, nullcatpointers			#Limpia los punteros si la categoría eliminada es la única categoría
+		lw $t0, 12($t0) 			
+		sw $t0, wclist					#Actualiza el puntero wclist, para que apunte a la siguiente categoría
+		j delcategory_end
+		
+nullcatpointers:
+		li $t0, 0
+		sw $t0, wclist
+		sw $t0, cclist
+		
+delcategory_end:
+		lw $ra, 4($sp)
+		addi $sp $sp, 4
+		li $v0, 0
+		j successmsg
+
 error_nocatnodel:
 		li $a0, 401					#Codigo de error cuando no hay categorias para eliminar
 		j printerror
-		
+
 #FUNCION PARA LA CREACION DE UN NUEVO OBJETO
 newobject:
 		lw $t0, cclist
-		beqz $t0, error_nocategoryforobj		#Checquea si no hay categorias
+		beqz $t0, error_nocategoryforobj		#Chequea si no hay categorias
+		addi $sp, $sp, -4
+		sw $ra, 4($sp)
+		la $a0, objName 				  
+		jal getblock					#Reserva memoria para el nombre del objeto
+		move $a2, $v0				
+		lw $t0, wclist
+		la $a0, 4($t0)  				
+		li $a1, 1					
+		jal addobject
+		lw $t0, wclist
+		lw $t0, 4($t0)  			
+		bnez $t0, newobject_end
+		sw $v0, ($t0)   			
+		j newobject_end
+
+newobject_end: 
+		lw $ra, 4($sp)
+		addi $sp, $sp, 4
+		li $v0, 0				
+		j successmsg
+addobject:
+		addi $sp, $sp, -8
+		sw $ra, 8($sp)
+		sw $a0, 4($sp)
+		jal smalloc
+		sw $a2, 8($v0) 				
+		lw $a0, 4($sp)
+		lw $t0, ($a0) 					
+		beqz $t0, addobject_empty_list
 		
+addobject_to_end:
+		lw $t1, ($t0)  					
+		lw $t2, 4($t1) 					
+		add $a1, $a1, $t2
+		sw $a1, 4($v0) 					
+		sw $t1, 0($v0)
+		sw $t0, 12($v0)
+		sw $v0, 12($t1)
+		sw $v0, 0($t0)
+		j addobject_exit
+		
+addobject_empty_list:
+		sw $a1, 4($v0) 					
+		sw $v0, ($a0)
+		sw $v0, 0($v0)
+		sw $v0, 12($v0)
+		
+addobject_exit:
+		lw $ra, 8($sp)
+		addi $sp $sp, 8
+		jr $ra
+				
 error_nocategoryforobj:
 		li $a0, 501					#Codigo de error cuando se quiere anexar un objeto y no hay categorías
 		j printerror
 
 #FUNCION PARA LISTAR OBJETOS DE LA CATEGORIA SELECCIONADA
 listobjects:	
-		lw $t0, cclist
+		lw $t0, wclist
 		beqz $t0, error_nocatnolist			#Chequea si no hay categorias
+		lw $t0, 4($t0)
+		beqz $t0, error_noobjects		
+		move $t2, $t0
+		
+print_objects:
+		lw $t1, 8($t0)
+		move $a0, $t1
+		li $v0, 4
+		syscall
+		lw $t0, 12($t0)
+		beq $t2, $t0, end_listobjects
+		j print_objects
+		
+end_listobjects:
+		li $v0, 0						
+		jr $ra
 		
 error_nocatnolist:
 		li $a0, 601					#Codigo de error cuando se quiere listar los objetos de una categoría, pero no hay categorías
@@ -207,6 +308,7 @@ error_noobjects:
 delobject:
 		lw $t0, cclist
 		beqz $t0, error_nocatnodelobj			#Chequea si no hay categorias
+		j menu_loop
 		
 error_nocatnodelobj:
 		li $a0, 701					#Codigo de error cuando no hay categorias y, por lo tanto, no hay objetos para eliminar
